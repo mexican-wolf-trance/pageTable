@@ -1,0 +1,11 @@
+Usage: ./oss
+
+Changing process from a blocked queue to a running queue was very difficult and ultiametely I failed to do it.
+
+Adding new processes, the processes requesting resourceses and the master granting them via message queue works great.
+
+Log output works decently well. -v as a more verbose output.
+
+Couldn't develop a robust banker's algorithm, so processes get added to the blocked queue and stays there.
+
+All of the message queues, shared memory, and semaphores are set up and work fantastically. Honestly, if I could figure out why my blocked queue was messging up, I could have completed it.
