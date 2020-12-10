@@ -84,6 +84,11 @@ int main()
 		msgsnd(msgqid, &message, sizeof(message), 0);
 		if(msgrcv(msgqid, &message, sizeof(message), pid, 0) > 0)
 		{
+			if(message.mpageReq)
+			{
+				printf("Child %li acknowledges page fault\n", (long) pid);
+				sleep(0.5);
+			}
 			if(pageCall % 1000 == 0)
 				dead_flag = 1;
 		}		

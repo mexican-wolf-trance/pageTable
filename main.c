@@ -39,17 +39,18 @@ typedef struct PF
 
 typedef struct Clock
 {
-	unsigned int sec;
-	unsigned int nsec;
+	double sec;
+	double nsec;
 } Clock;
 
 typedef struct PCB
 {
 	pid_t pid;
-	unsigned int access;
-	int pageFault;
-	unsigned int accessSpeed;
-	unsigned int accessPerSecond;
+	double access;
+	double pageFault;
+	double faultsPS;
+	double accessSpeed;
+	double accessPerSecond;
 } PCB;
 
 //I intitalize the ids and the clock pointer here so my signal handler can use them
@@ -107,10 +108,10 @@ int insertPid(PCB *pcb, pid_t pid)
 		if(pcb[i].pid == 0)
 		{
 			pcb[i].pid = pid;
-			return 0;
+			return 1;
 		}
 	}
-	return 1;
+	return 0;
 }
 
 int findPCBindex(PCB *pcb, pid_t pid)
@@ -118,16 +119,27 @@ int findPCBindex(PCB *pcb, pid_t pid)
         int i;
         for(i = 0; i < MAXCHILD; i++)
         {
+		printf("Process %d pid: %li ", i, (long) pcb[i].pid);
                 if(pcb[i].pid == 0)
                         return i;
         }
+	printf("\n");
         return 0;
+}
+
+char *isOccupied(PF *fr, int i)
+{
+	char occ[5];
+	if(fr[i].pid)
+		return strcpy(occ, "Yes");
+	return strcpy(occ, "No");
 }
 
 //The signal handler!
 void sigint(int sig)
 {
-	fclose(fp);
+	if(fp != NULL)
+		fclose(fp);
         if (msgctl(msgqid, IPC_RMID, NULL) == -1)
                 fprintf(stderr, "Message queue could not be deleted\n");
 
@@ -139,6 +151,8 @@ void sigint(int sig)
 		write(1, "\nWoops! You got a segmentation fault!\n", 38);
 	else if(sig == SIGINT)
 		write(1, "\nCTRL C was hit!\n", 17);
+	else if(sig == SIGFPE)
+		write(1, "Floating point exception occurred ya dingus!\n", 46); 
 	else
 		write(1, "Oh no! An error!\n", 17);
 	write(1, "Now killing the kiddos\n", 23);
@@ -149,11 +163,17 @@ void sigint(int sig)
 //The main function
 int main (int argc, char **argv)
 {
-	//The CTRL C catch
+	//The signal handlers!
 	signal(SIGINT, sigint);
 	signal(SIGSEGV, sigint);
+	signal(SIGFPE, sigint);
+        if((fp = fopen("log.out", "w")) == 0)
+        {
+                perror("log.out");
+                return 0;
+        }
+        fprintf(fp, "%s", "Program start\n");
 
-	fp = fopen("log.out", "w");
 
 	int i, index = 0,  option, max_time = 2, counter = 0, tot_proc = 0, vOpt = 0, pageTable[18][32], numCalls = 0, request;
 	pid_t pidvector[MAXCHILD];
@@ -180,10 +200,10 @@ int main (int argc, char **argv)
                         printf("%c is not an option. Use -h for usage details\n", optopt);
                         return 0;
         }
-        if (argc > 2)
+        if (argc > 3)
         {
                 printf("Invalid usage! Check the readme\nUsage: ./oss\n");
-                printf("Use the -v option for a more verbose log file");
+                printf("Use -h to see the correct useage\n");
                 return 0;
         }
 
@@ -242,6 +262,7 @@ int main (int argc, char **argv)
 	        pcb[i].pageFault = 0;
 	        pcb[i].accessSpeed = 0;
 		pcb[i].accessPerSecond = 0;
+		pcb[i].faultsPS = 0;
 	}
 
 
@@ -256,6 +277,12 @@ int main (int argc, char **argv)
 		pidvector[i] = 0;
 
 	newProcTime();
+
+	if(fp == NULL)
+	{
+		printf("Where is the file???\n");
+		fp = fopen("log.out", "w");
+	}
 	//Now we start the main show
 	while(1)
 	{
@@ -278,9 +305,15 @@ int main (int argc, char **argv)
 			printf("Adding new process %ld\n", (long) child);
 			for(i = 0; i < MAXCHILD; i++)
 			{
+				printf("P%d = %li  ", i, (long) pidvector[i]);
 				if(pidvector[i] == 0)
+				{
+					printf("Process index %d is empty!", i);
 					pidvector[i] = child;
+					break;
+				}
 			}
+			printf("\n");
 			insertPid(pcb, child);		
 		}
 			
@@ -288,7 +321,7 @@ int main (int argc, char **argv)
 		{
 			printf("OSS acknowledges child %ld has died\n", (long) message.pid);
 			if(vOpt)
-				fprintf(fp, "OSS acknowledges child %ld has died\n", (long) message.pid);
+				fprintf(fp, "%s %ld %s", "OSS acknowledges child", (long) message.pid, "has died\n");
 			wait(NULL);	
 			counter--;
 
@@ -296,37 +329,78 @@ int main (int argc, char **argv)
 			pidvector[index] = 0;
 			for(i = 0; i < 32; i++)
 				pageTable[index][i] = 0;
-			printf("Process %li: Total accesses: %u, Access per second: %u, Page faults: %i, \n", (long) pcb[index].pid, pcb[index].access, pcb[index].accessPerSecond, pcb[index].pageFault);
+			printf("Process %li: Total accesses: %f, Access per second: %f, Page faults per access: %f, \n", (long) pcb[index].pid, pcb[index].access, pcb[index].accessPerSecond, pcb[index].faultsPS);
 			
 		}
 		
                 if(msgrcv(msgqid, &message, sizeof(message), 3, IPC_NOWAIT) > 0)
                 {
 			numCalls++;
-			request = message.mpageReq / 1024;
+			double req = message.mpageReq;
+			request = req / 1024;
 			index = findVectorIndex(message.pid, pidvector);
+			printf("Process %d is requesting address %f at time %f:%f\n", index, req, sim_clock->sec, sim_clock->nsec);
+			fprintf(fp, "%s %d %s %f%s", "Process", index, "is requesting address", req, "\n");
+			if(!fp)
+				perror("log file");
+			else
+				printf("What the hell?\n");
 			if(pageTable[index][request])
 			{
+				printf("Already there! Page Fault!\n");
 				if(vOpt)
-					printf("vopt\n");
-				printf("Already there!");
+					fprintf(fp, "%s", "vopt\n");
 				//implement LRU policy
 				index = findPCBindex(pcb, message.pid);
 				pcb[index].pageFault++;
+				printf("Index: %d, Accesses: %f\n", index, pcb[index].access);
+				pcb[index].faultsPS = pcb[index].pageFault / pcb[index].access;
+
+                                message.mtype = message.pid;
+                                message.mpageReq = 1;
+                                msgsnd(msgqid, &message, sizeof(message), 0);
 			}
 			else
 			{
+				printf("Page request granted!\n");
+				if(vOpt)
+					fprintf(fp, "%s", "vOpt!\n");
 				pageTable[index][request] = message.mpageReq;
 
 				index = findPFindex(frame);
 				frame[index].pid = message.pid;
 				frame[index].dirty = message.mWrite;
 				frame[index].page = message.mpageReq;
-				frame[index].ref = 0;
+				frame[index].ref++;
 				
 				index = findPCBindex(pcb, message.pid);
 				pcb[index].access++;
-				pcb[index].accessPerSecond = pcb[index].access / (sim_clock->sec + (sim_clock->nsec / 1000000000));
+				if(sim_clock->nsec > 0)
+					pcb[index].accessPerSecond = pcb[index].access / (sim_clock->sec + (sim_clock->nsec / 1000000000));
+				
+				if(numCalls % 100 == 0)
+				{
+					printf("Current page table:\n");
+					printf("\t Occupied Dirty timeStamp\n");
+					for(i = 0; i < 256; i++)
+					{
+						printf("Frame %d: %s     %d     time!\n", i, isOccupied(frame, i), frame[i].dirty);
+					}
+					printf("\n");
+	                                if(vOpt)
+	                                {
+        	                                fprintf(fp, "%s", "Current page table:\n");
+                	                        fprintf(fp, "%s", "\t Occupied Dirty timeStamp\n");
+                        	                for(i = 0; i < 256; i++)
+                                	        {
+                                        	        fprintf(fp, "%s %d%s %s     %d     %s\n", "Frame", i, ":", isOccupied(frame, i), frame[i].dirty, "time!");
+                                       		}
+                                        	fprintf(fp, "\n");
+                                	}
+				}
+				message.mtype = message.pid;
+				message.mpageReq = 0;
+				msgsnd(msgqid, &message, sizeof(message), 0);
 			}
                 }
 		
