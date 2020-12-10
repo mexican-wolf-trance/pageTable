@@ -349,7 +349,7 @@ int main (int argc, char **argv)
 
 	shmdt(sim_clock);
 	shmctl(shmid, IPC_RMID, NULL);
-        if (msgctl(msgqid, IPC_RMID, NULL) == -1)
+        if(msgctl(msgqid, IPC_RMID, NULL) == -1)
                 fprintf(stderr, "Message queue could not be deleted\n");
 
 	kill(0, SIGQUIT);

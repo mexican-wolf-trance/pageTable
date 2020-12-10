@@ -33,8 +33,9 @@ struct msgbuf
 
 int main()
 {
-	int i, shmid, msgqid, semid, res_no, duration, decision, request_flag = 0, decision_flag = 0, dead_flag = 0, resChoice, requested[20];
-	long long current_time = 0, time_check = 0;
+	int i, msgqid, decision, dead_flag = 0, pageCall = 0;
+//	int shmid;
+//	long long current_time = 0, time_check = 0;
 //	struct Clock *sim_clock;
 	time_t t;
 	pid_t pid;
@@ -71,70 +72,27 @@ int main()
 	i = 0;
 	while(!dead_flag)
 	{
-		
-		
-//		if(decision > 2 && decision <= 70 && ((current_time + duration) <= time_check))
-//		{
-//			while(1)
-//			{
-//				if(requested[resChoice] != allocatedRes->usedResources[resChoice] && requested[resChoice] > 0)
-//				{
-//					res_no = ((rand() % requested[resChoice]) + 1) - allocatedRes->usedResources[resChoice];
-//					printf("Child %ld is requesting %d resource!\n", (long) pid, resChoice);
-//					message.mtype = 3;
-//             	        		message.pid = pid;
-//					message.mresReq = resChoice;
-//					message.mresNo = res_no;
-//             	        		msgsnd(msgqid, &message, sizeof(message), 0);
-//					if(msgrcv(msgqid, &message, sizeof(message), pid, 0) > 0)
-//					{
-//						allocatedRes->usedResources[resChoice] += res_no;
-//						decision_flag = 0;
-//						request_flag = 1;
-//					}
-//				}
-//				if(requested[resChoice] == 0)
-//					resChoice = (rand() % 20);
-//				if(!decision_flag)
-//					break;
-//			}
-//		}
-//             	if(request_flag && decision > 70 && decision <= 100 && ((current_time + duration) <= time_check))
-//             	{
-//			while(1)
-//			{
-//				i = 0;
-//				while(i < 20)
-//				{
-//					if((i == resChoice))
-//					{
-//             	        			printf("Child %ld is releasing resource %d!\n", (long) pid, resChoice);
-//             	        			message.mtype = 4;
-//             	        			message.pid = pid;
-//						message.mresReq = resChoice;
-//						message.mresNo = allocatedRes->usedResources[resChoice];
-//             	        			msgsnd(msgqid, &message, sizeof(message), 0);
-//						if(msgrcv(msgqid, &message, sizeof(message), pid, 0) > 0)
-//						{
-//							allocatedRes->usedResources[resChoice] = 0;
-//							decision_flag = 0;
-//							break;
-//						}
-//					}
-//					i++;
-//				}
-//				resChoice = (rand() % 20);
-//				if(!decision_flag)
-//					break;
-//			}
-//             	}
-//		decision_flag = 0;
-                printf("Child %ld decision %d\n", (long) pid, decision);
-                message.mtype = 2;
-                message.pid = pid;
-                msgsnd(msgqid, &message, sizeof(message), 0);
-                exit(0);
-	
+		pageCall++;
+		decision = rand() % 32767;
+		message.mtype = 3;
+		message.pid = pid;
+		message.mpageReq = decision;
+		if(decision % 20 <= 5)
+			message.mWrite = 1;
+		else
+			message.mWrite = 0;
+		msgsnd(msgqid, &message, sizeof(message), 0);
+		if(msgrcv(msgqid, &message, sizeof(message), pid, 0) > 0)
+		{
+			if(pageCall % 1000 == 0)
+				dead_flag = 1;
+		}		
 	}
+        printf("Child %ld decision %d\n", (long) pid, decision);
+        message.mtype = 2;
+        message.pid = pid;
+        msgsnd(msgqid, &message, sizeof(message), 0);
+        exit(0);
+
 }
 
