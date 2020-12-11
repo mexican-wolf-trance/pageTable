@@ -13,8 +13,6 @@
 
 #define SEC_KEY 0x1234567
 #define MSG_KEY 0x2345
-#define RES_KEY 0x7654
-#define SEM_KEY 0x1111
 
 //Initialize the shared clock, total resource tracker, and message queue
 typedef struct Clock
@@ -33,7 +31,7 @@ struct msgbuf
 
 int main()
 {
-	int i, msgqid, decision, dead_flag = 0, pageCall = 0;
+	int msgqid, decision, dead_flag = 0, pageCall = 0;
 //	int shmid;
 //	long long current_time = 0, time_check = 0;
 //	struct Clock *sim_clock;
@@ -65,11 +63,10 @@ int main()
 //        }
 
 	pid = getpid();	
-	//Seed the random number generator and grab a number between 0 and 50,000,000)
+	//Seed the random number generator
 	srand((int)time(&t) % pid);
 	
 	//The main show
-	i = 0;
 	while(!dead_flag)
 	{
 		pageCall++;
@@ -82,14 +79,16 @@ int main()
 		else
 			message.mWrite = 0;
 		msgsnd(msgqid, &message, sizeof(message), 0);
+		printf("child message send\n");
 		if(msgrcv(msgqid, &message, sizeof(message), pid, 0) > 0)
 		{
+			printf("child message receive\n");
 			if(message.mpageReq)
 			{
 				printf("Child %li acknowledges page fault\n", (long) pid);
 				sleep(0.5);
 			}
-			if(pageCall % 15 == 0)
+			if(pageCall % 100 == 0)
 			{
 				if(rand() % 20 <= 5)
 					dead_flag = 1;

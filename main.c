@@ -17,8 +17,6 @@
 #define BUFSIZE 1024
 #define SEC_KEY 0x1234567
 #define MSG_KEY 0x2345
-#define RES_KEY 0x7654
-#define SEM_KEY 0x1111
 
 //Initialize the message and clock structs!
 struct msgbuf
@@ -60,7 +58,7 @@ struct Clock *sim_clock;
 struct Clock *new_proc_clock;
 struct PF frame[256];
 struct PCB pcb[MAXCHILD];
-FILE *fp;
+//FILE *fp;
 
 //set next process fork time
 void newProcTime()
@@ -158,8 +156,8 @@ int leastRecentlyUsed(PF *pcb)
 //The signal handler!
 void sigint(int sig)
 {
-	if(fp != NULL)
-		fclose(fp);
+//	if(fp != NULL)
+//		fclose(fp);
         if (msgctl(msgqid, IPC_RMID, NULL) == -1)
                 fprintf(stderr, "Message queue could not be deleted\n");
 
@@ -187,19 +185,13 @@ int main (int argc, char **argv)
 	signal(SIGINT, sigint);
 	signal(SIGSEGV, sigint);
 	signal(SIGFPE, sigint);
-        if((fp = fopen("log.out", "w")) == 0)
-        {
-                perror("log.out");
-                return 0;
-        }
-        fprintf(fp, "%s", "Program start\n");
-
 
 	int i, index = 0,  option, max_time = 2, counter = 0, tot_proc = 0, vOpt = 0, pageTable[18][32], numCalls = 0, request, delay;
 //	long long time_check;
 	pid_t pidvector[MAXCHILD];
 	char *exec[] = {"./user", NULL, NULL};
 	pid_t child = 0;
+	FILE *fp;
 	//Getopt is great!
         while ((option = getopt(argc, argv, "hvm:")) != -1)
         switch (option)
@@ -300,11 +292,13 @@ int main (int argc, char **argv)
 
 	newProcTime();
 
-	if(fp == NULL)
-	{
-		printf("Where is the file???\n");
-		fp = fopen("log.out", "w");
-	}
+        if((fp = fopen("log.out", "w")) == NULL)
+        {
+                perror("log.out");
+                return 0;
+        }
+        fprintf(fp, "%s", "Program start\n");
+
 	//Now we start the main show
 	while(1)
 	{
@@ -443,9 +437,16 @@ int main (int argc, char **argv)
                                         	fprintf(fp, "\n");
                                 	}
 				}
+				printf("message send to %li\n", (long) message.pid);
 				message.mtype = message.pid;
 				message.mpageReq = 0;
-				msgsnd(msgqid, &message, sizeof(message), 0);
+				message.mWrite = 0;
+				message.pid = 0;	
+				if(msgsnd(msgqid, &message, sizeof(message), 0) < 0)
+				{
+					perror("msgsnd");
+					sigint(0);
+				}
 			}
                 }
 		
@@ -464,7 +465,7 @@ int main (int argc, char **argv)
 			break;
 	}
 	printf("Main finished!\n");
-//	fclose(fp);
+	fclose(fp);
 
 	shmdt(sim_clock);
 	shmctl(shmid, IPC_RMID, NULL);
