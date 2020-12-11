@@ -47,6 +47,7 @@ typedef struct PCB
 {
 	pid_t pid;
 	double access;
+	double request;
 	double pageFault;
 	double faultsPS;
 	double accessSpeed;
@@ -78,6 +79,8 @@ int checkProcTime()
 	return 0;
 }
 
+
+//these functions find the indeces of the different objects
 int findVectorIndex(pid_t pid, int vector[MAXCHILD])
 {
 	int i;
@@ -100,6 +103,7 @@ int findPFindex(PF *pg)
 	return 0;
 }
 
+//except for this one, which inserts a new control board to the list
 int insertPid(PCB *pcb, pid_t pid)
 {
 	int i;
@@ -119,11 +123,11 @@ int findPCBindex(PCB *pcb, pid_t pid)
         int i;
         for(i = 0; i < MAXCHILD; i++)
         {
-		printf("Process %d pid: %li ", i, (long) pcb[i].pid);
+//		printf("Process %d pid: %li ", i, (long) pcb[i].pid);
                 if(pcb[i].pid == 0)
                         return i;
         }
-	printf("\n");
+//	printf("\n");
         return 0;
 }
 
@@ -134,6 +138,22 @@ char *isOccupied(PF *fr, int i)
 		return strcpy(occ, "Yes");
 	return strcpy(occ, "No");
 }
+
+int leastRecentlyUsed(PF *pcb)
+{
+	int i, temp, index;
+	temp = pcb[0].ref;
+	for(i = 1; i < 256; i++)
+	{
+		if(temp > pcb[i].ref)
+		{
+			temp = pcb[i].ref;
+			index = i;
+		}
+	}
+	return index;
+}
+			 
 
 //The signal handler!
 void sigint(int sig)
@@ -175,7 +195,8 @@ int main (int argc, char **argv)
         fprintf(fp, "%s", "Program start\n");
 
 
-	int i, index = 0,  option, max_time = 2, counter = 0, tot_proc = 0, vOpt = 0, pageTable[18][32], numCalls = 0, request;
+	int i, index = 0,  option, max_time = 2, counter = 0, tot_proc = 0, vOpt = 0, pageTable[18][32], numCalls = 0, request, delay;
+//	long long time_check;
 	pid_t pidvector[MAXCHILD];
 	char *exec[] = {"./user", NULL, NULL};
 	pid_t child = 0;
@@ -259,6 +280,7 @@ int main (int argc, char **argv)
 	{
 	        pcb[i].pid = 0;
 	        pcb[i].access = 0;
+		pcb[i].request = 0;
 	        pcb[i].pageFault = 0;
 	        pcb[i].accessSpeed = 0;
 		pcb[i].accessPerSecond = 0;
@@ -305,10 +327,10 @@ int main (int argc, char **argv)
 			printf("Adding new process %ld\n", (long) child);
 			for(i = 0; i < MAXCHILD; i++)
 			{
-				printf("P%d = %li  ", i, (long) pidvector[i]);
+//				printf("P%d = %li  ", i, (long) pidvector[i]);
 				if(pidvector[i] == 0)
 				{
-					printf("Process index %d is empty!", i);
+//					printf("Process index %d is empty!", i);
 					pidvector[i] = child;
 					break;
 				}
@@ -319,7 +341,7 @@ int main (int argc, char **argv)
 			
 		if(msgrcv(msgqid, &message, sizeof(message), 2, IPC_NOWAIT) > 0)
 		{
-			printf("OSS acknowledges child %ld has died\n", (long) message.pid);
+			printf("*******OSS acknowledges child %ld has died\n", (long) message.pid);
 			if(vOpt)
 				fprintf(fp, "%s %ld %s", "OSS acknowledges child", (long) message.pid, "has died\n");
 			wait(NULL);	
@@ -339,23 +361,46 @@ int main (int argc, char **argv)
 			double req = message.mpageReq;
 			request = req / 1024;
 			index = findVectorIndex(message.pid, pidvector);
-			printf("Process %d is requesting address %f at time %f:%f\n", index, req, sim_clock->sec, sim_clock->nsec);
-			fprintf(fp, "%s %d %s %f%s", "Process", index, "is requesting address", req, "\n");
-			if(!fp)
-				perror("log file");
-			else
-				printf("What the hell?\n");
+			printf("Process %d is requesting address %f, page %d, at time %f:%f\n", index, req, request, sim_clock->sec, sim_clock->nsec);
+			if(vOpt)
+				fprintf(fp, "%s %d %s %f%s", "Process", index, "is requesting address", req, "\n");
+
 			if(pageTable[index][request])
 			{
+				pageTable[index][request] = message.mpageReq;
 				printf("Already there! Page Fault!\n");
 				if(vOpt)
 					fprintf(fp, "%s", "vopt\n");
 				//implement LRU policy
+//				printf("findPCBindex\n");
 				index = findPCBindex(pcb, message.pid);
+				pcb[index].request = request;
 				pcb[index].pageFault++;
-				printf("Index: %d, Accesses: %f\n", index, pcb[index].access);
+//				printf("Index: %d, Accesses: %f\n", index, pcb[index].access);
 				pcb[index].faultsPS = pcb[index].pageFault / pcb[index].access;
 
+				//find the least recently used frame and swap it out
+//				printf("leastRecentlyUsed\n");
+				index = leastRecentlyUsed(frame);
+				printf("Least recently used frame %d, now swapping out %li\n", index, (long) frame[index].pid);
+//				printf("After LRU");
+                                frame[index].pid = message.pid;
+                                frame[index].dirty = message.mWrite;
+                                frame[index].page = message.mpageReq;
+                                frame[index].ref++;
+
+				//Simulate the delay of either a dirty page swap, or a regulary, dirty being the longer
+//                                time_check = sim_clock->sec*1000000000 + sim_clock->nsec;
+                                if(frame[index].dirty)
+                                        delay = 14000000;
+                                else
+                                        delay = 5000000;
+				sim_clock->nsec+= delay;
+					
+//                                while((time_check + delay) >= time_check)
+//					time_check += 10;					
+
+//				printf("message send\n");
                                 message.mtype = message.pid;
                                 message.mpageReq = 1;
                                 msgsnd(msgqid, &message, sizeof(message), 0);
@@ -419,7 +464,7 @@ int main (int argc, char **argv)
 			break;
 	}
 	printf("Main finished!\n");
-	fclose(fp);
+//	fclose(fp);
 
 	shmdt(sim_clock);
 	shmctl(shmid, IPC_RMID, NULL);

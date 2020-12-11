@@ -89,8 +89,11 @@ int main()
 				printf("Child %li acknowledges page fault\n", (long) pid);
 				sleep(0.5);
 			}
-			if(pageCall % 1000 == 0)
-				dead_flag = 1;
+			if(pageCall % 15 == 0)
+			{
+				if(rand() % 20 <= 5)
+					dead_flag = 1;
+			}
 		}		
 	}
         printf("Child %ld decision %d\n", (long) pid, decision);
@@ -100,4 +103,3 @@ int main()
         exit(0);
 
 }
-
